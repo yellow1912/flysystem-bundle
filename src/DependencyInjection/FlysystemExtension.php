@@ -37,12 +37,14 @@ class FlysystemExtension extends Extension
 
         $container
             ->setDefinition('flysystem.adapter.lazy.factory', new Definition(LazyFactory::class))
-            ->setPublic(false)
-        ;
+            ->setPublic(false);
 
         $this->createStoragesDefinitions($config, $container);
     }
 
+    /**
+     * @throws \Exception
+     */
     private function createStoragesDefinitions(array $config, ContainerBuilder $container)
     {
         $definitionFactory = new AdapterDefinitionFactory();
@@ -63,16 +65,30 @@ class FlysystemExtension extends Extension
             // Create adapter definition
             if ($adapter = $definitionFactory->createDefinition($storageConfig['adapter'], $storageConfig['options'])) {
                 // Native adapter
-                $container->setDefinition('flysystem.adapter.'.$storageName, $adapter)->setPublic(false);
+                $container->setDefinition('flysystem.adapter.' . $storageName, $adapter)->setPublic(false);
             } else {
                 // Custom adapter
-                $container->setAlias('flysystem.adapter.'.$storageName, $storageConfig['adapter'])->setPublic(false);
+                if ($container->has($storageConfig['adapter'])) {
+                    $container->setAlias('flysystem.adapter.' . $storageName, $storageConfig['adapter'])->setPublic(false);
+                } else {
+                    if (class_exists($storageConfig['adapter'])) {
+                        $definition = new Definition();
+                        $definition->setClass($storageConfig['adapter']);
+                        foreach ($storageConfig['options'] as $k => $v) {
+                            $definition->setArgument('$' . $k, $v);
+                        }
+                        $container->setDefinition('flysystem.adapter.' . $storageName, $definition)->setPublic(false);
+                    } else {
+                        throw new \Exception(sprintf('Custom adapter `%s` is neither a service nor a valid class', $storageConfig['adapter']));
+                    }
+                }
+                $container->setAlias('flysystem.adapter.' . $storageName, $storageConfig['adapter'])->setPublic(false);
             }
 
             // Create storage definition
             $container->setDefinition(
                 $storageName,
-                $this->createStorageDefinition($storageName, new Reference('flysystem.adapter.'.$storageName), $storageConfig)
+                $this->createStorageDefinition($storageName, new Reference('flysystem.adapter.' . $storageName), $storageConfig)
             );
 
             // Register named autowiring alias
